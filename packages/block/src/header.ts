@@ -261,26 +261,34 @@ export class BlockHeader {
   }
 
   /**
-   * Returns the canonical difficulty for this block.
-   *
-   * @param parentBlock - the parent `Block` of this header
+   * @param parentBlock - The `parentBlock` where we wish to build upon
+   * @param timestamp - The `BN` timestamp which we should calculate the difficulty for
+   * @param number - The `BN` block number. Defaults to the parent blocks' `number` + 1
+   * @param common - The `Common` to use: defaults to the parent blocks` `Common`
    */
-  canonicalDifficulty(parentBlock: Block): BN {
-    const hardfork = this._getHardfork()
-    const blockTs = this.timestamp
+
+  public static getCanonicalDifficulty(
+    parentBlock: Block,
+    timestamp: BN,
+    number?: BN,
+    common?: Common,
+  ): BN {
+    const blockTs = timestamp.clone()
     const { timestamp: parentTs, difficulty: parentDif } = parentBlock.header
+    const usedCommon = common || parentBlock._common
+    let num = (number || parentBlock.header.number).clone().addn(1)
+    const hardfork = usedCommon.hardfork() || usedCommon.activeHardfork(num.toNumber())
     const minimumDifficulty = new BN(
-      this._common.paramByHardfork('pow', 'minimumDifficulty', hardfork),
+      usedCommon.paramByHardfork('pow', 'minimumDifficulty', hardfork),
     )
     const offset = parentDif.div(
-      new BN(this._common.paramByHardfork('pow', 'difficultyBoundDivisor', hardfork)),
+      new BN(usedCommon.paramByHardfork('pow', 'difficultyBoundDivisor', hardfork)),
     )
-    let num = this.number.clone()
 
     // We use a ! here as TS cannot follow this hardfork-dependent logic, but it always gets assigned
     let dif!: BN
 
-    if (this._common.hardforkGteHardfork(hardfork, 'byzantium')) {
+    if (usedCommon.hardforkGteHardfork(hardfork, 'byzantium')) {
       // max((2 if len(parent.uncles) else 1) - ((timestamp - parent.timestamp) // 9), -99) (EIP100)
       const uncleAddend = parentBlock.header.uncleHash.equals(KECCAK256_RLP_ARRAY) ? 1 : 2
       let a = blockTs.sub(parentTs).idivn(9).ineg().iaddn(uncleAddend)
@@ -292,25 +300,25 @@ export class BlockHeader {
       dif = parentDif.add(offset.mul(a))
     }
 
-    if (this._common.hardforkGteHardfork(hardfork, 'muirGlacier')) {
+    if (usedCommon.hardforkGteHardfork(hardfork, 'muirGlacier')) {
       // Istanbul/Berlin difficulty bomb delay (EIP2384)
       num.isubn(9000000)
       if (num.ltn(0)) {
         num = new BN(0)
       }
-    } else if (this._common.hardforkGteHardfork(hardfork, 'constantinople')) {
+    } else if (usedCommon.hardforkGteHardfork(hardfork, 'constantinople')) {
       // Constantinople difficulty bomb delay (EIP1234)
       num.isubn(5000000)
       if (num.ltn(0)) {
         num = new BN(0)
       }
-    } else if (this._common.hardforkGteHardfork(hardfork, 'byzantium')) {
+    } else if (usedCommon.hardforkGteHardfork(hardfork, 'byzantium')) {
       // Byzantium difficulty bomb delay (EIP649)
       num.isubn(3000000)
       if (num.ltn(0)) {
         num = new BN(0)
       }
-    } else if (this._common.hardforkGteHardfork(hardfork, 'homestead')) {
+    } else if (usedCommon.hardforkGteHardfork(hardfork, 'homestead')) {
       // 1 - (block_timestamp - parent_timestamp) // 10
       let a = blockTs.sub(parentTs).idivn(10).ineg().iaddn(1)
       const cutoff = new BN(-99)
@@ -322,9 +330,8 @@ export class BlockHeader {
     } else {
       // pre-homestead
       if (
-        parentTs
-          .addn(this._common.paramByHardfork('pow', 'durationLimit', hardfork))
-          .cmp(blockTs) === 1
+        parentTs.addn(usedCommon.paramByHardfork('pow', 'durationLimit', hardfork)).cmp(blockTs) ===
+        1
       ) {
         dif = offset.add(parentDif)
       } else {
@@ -342,6 +349,20 @@ export class BlockHeader {
     }
 
     return dif
+  }
+
+  /**
+   * Returns the canonical difficulty for this block.
+   *
+   * @param parentBlock - the parent `Block` of this header
+   */
+  canonicalDifficulty(parentBlock: Block): BN {
+    return BlockHeader.getCanonicalDifficulty(
+      parentBlock,
+      this.timestamp,
+      this.number,
+      this._common,
+    )
   }
 
   /**
