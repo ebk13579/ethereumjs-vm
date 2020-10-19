@@ -2,6 +2,7 @@ import { Buffer } from 'buffer'
 import {
   Address,
   BN,
+  bnToHex,
   bnToRlp,
   ecrecover,
   ecsign,
@@ -13,7 +14,7 @@ import {
   MAX_INTEGER,
 } from 'ethereumjs-util'
 import Common from '@ethereumjs/common'
-import { TxOptions, TxData, JsonTx, bnToHex } from './types'
+import { TxOptions, TxData, JsonTx } from './types'
 
 // secp256k1n/2
 const N_DIV_2 = new BN('7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0', 16)
